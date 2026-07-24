@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initStoryPanelProgress();
   initStoryPanelDrag();
   initStoryPanelReveal(reducedMotion);
+  initStoryScrollHint({ reducedMotion });
   initStoryPanelCopyEqualHeight();
   initSplitVisualSync();
   initShowcaseActivation();
@@ -615,6 +616,172 @@ function initStoryPanelCopyEqualHeight() {
   }
 
   scheduleApply();
+}
+
+function initStoryScrollHint({ reducedMotion }) {
+  const storyHint = document.querySelector('[data-story-scroll-hint]');
+  const storyHintButton = document.querySelector('[data-story-scroll-hint-button]');
+  const storySection = document.querySelector('.story-section');
+  const storyRail = document.querySelector('.story-panels');
+  const storyPanels = Array.from(document.querySelectorAll('.story-panels .story-panel'));
+  const mobileQuery = window.matchMedia('(max-width: 767px)');
+
+  if (!storyHint || !storyHintButton || !storySection || !storyRail || !storyPanels.length) {
+    return;
+  }
+
+  let isVisible = false;
+  let hasAnimatedIn = false;
+  let isDismissed = false;
+  let hideTimeoutId = null;
+
+  const dismissHint = () => {
+    if (isDismissed) {
+      return;
+    }
+
+    isDismissed = true;
+    hideHint();
+  };
+
+  const showHint = () => {
+    if (!mobileQuery.matches || isVisible || isDismissed) {
+      return;
+    }
+
+    if (hideTimeoutId) {
+      window.clearTimeout(hideTimeoutId);
+      hideTimeoutId = null;
+    }
+
+    isVisible = true;
+    storyHint.classList.remove('hidden');
+
+    if (reducedMotion || hasAnimatedIn) {
+      storyHint.classList.remove('opacity-0', '-translate-x-4');
+      storyHint.classList.add('opacity-100', 'translate-x-0');
+      hasAnimatedIn = true;
+      return;
+    }
+
+    storyHint.classList.remove('opacity-100', 'translate-x-0');
+    storyHint.classList.add('opacity-0', '-translate-x-4');
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!isVisible) {
+          return;
+        }
+
+        storyHint.classList.remove('opacity-0', '-translate-x-4');
+        storyHint.classList.add('opacity-100', 'translate-x-0');
+      });
+    });
+
+    hasAnimatedIn = true;
+  };
+
+  const hideHint = () => {
+    if (!isVisible) {
+      return;
+    }
+
+    isVisible = false;
+    storyHint.classList.remove('opacity-100', 'translate-x-0');
+    storyHint.classList.add('opacity-0', '-translate-x-4');
+
+    hideTimeoutId = window.setTimeout(() => {
+      if (!isVisible) {
+        storyHint.classList.add('hidden');
+      }
+    }, 260);
+  };
+
+  const updateHintVisibility = () => {
+    if (!mobileQuery.matches) {
+      hideHint();
+      return;
+    }
+
+    if (isDismissed) {
+      hideHint();
+      return;
+    }
+
+    const hasHorizontalOverflow = storyRail.scrollWidth - storyRail.clientWidth > 8;
+    if (!hasHorizontalOverflow) {
+      hideHint();
+      return;
+    }
+
+    const sectionRect = storySection.getBoundingClientRect();
+    const isStoryInView = sectionRect.top < window.innerHeight * 0.72 && sectionRect.bottom > window.innerHeight * 0.28;
+
+    if (isStoryInView) {
+      showHint();
+      return;
+    }
+
+    hideHint();
+  };
+
+  const goToNextPanel = () => {
+    let activeIndex = 0;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    const viewportCenter = storyRail.scrollLeft + storyRail.clientWidth / 2;
+
+    storyPanels.forEach((panel, index) => {
+      const panelCenter = panel.offsetLeft + panel.offsetWidth / 2;
+      const distance = Math.abs(panelCenter - viewportCenter);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        activeIndex = index;
+      }
+    });
+
+    const nextIndex = Math.min(activeIndex + 1, storyPanels.length - 1);
+    const nextPanel = storyPanels[nextIndex];
+
+    if (!nextPanel) {
+      return;
+    }
+
+    storyRail.scrollTo({
+      left: nextPanel.offsetLeft,
+      behavior: reducedMotion ? 'auto' : 'smooth'
+    });
+
+    dismissHint();
+  };
+
+  mobileQuery.addEventListener('change', updateHintVisibility);
+  window.addEventListener('scroll', updateHintVisibility, { passive: true });
+  window.addEventListener('resize', updateHintVisibility, { passive: true });
+  window.addEventListener('orientationchange', updateHintVisibility, { passive: true });
+  storyHintButton.addEventListener('click', goToNextPanel);
+
+  storyRail.addEventListener(
+    'pointerdown',
+    (event) => {
+      if (event.pointerType === 'touch') {
+        dismissHint();
+      }
+    },
+    { passive: true }
+  );
+
+  storyRail.addEventListener('touchstart', dismissHint, { passive: true });
+  storyRail.addEventListener(
+    'scroll',
+    () => {
+      if (storyRail.scrollLeft > 6) {
+        dismissHint();
+      }
+    },
+    { passive: true }
+  );
+
+  updateHintVisibility();
 }
 
 function initSplitVisualSync() {
