@@ -1,9 +1,33 @@
 document.addEventListener('DOMContentLoaded', () => {
+  initAcademyInquiryLink();
   initAcademyCarousel();
   initCursorGlow();
   initRevealObserver();
   initFaqAccordion();
 });
+
+function initAcademyInquiryLink() {
+  const academyLinks = document.querySelectorAll('[data-academy-contact]');
+  if (!academyLinks.length) {
+    return;
+  }
+
+  const whatsappNumber = '31623262640';
+  const whatsappMessage = encodeURIComponent('Hey Marissa, ik zou graag meer willen weten over de Powder Brows Academy. Kun je me meer informatie sturen? Bedankt alvast!');
+  const mailtoAddress = 'glamourbytink@gmail.com';
+  const mailtoSubject = encodeURIComponent('Academie - informatie aanvraag');
+  const mailtoBody = encodeURIComponent('Hey Marissa,\n\nIk zou graag meer willen weten over de Powder Brows Academy.\n\nZou je mij meer informatie toe willen sturen? Bedankt alvast!\n\nMet vriendelijke groet,\n');
+  const useWhatsApp = window.matchMedia('(max-width: 767px)').matches || window.matchMedia('(pointer: coarse)').matches;
+
+  academyLinks.forEach((link) => {
+    const href = useWhatsApp
+      ? `https://wa.me/${whatsappNumber}?text=${whatsappMessage}`
+      : `mailto:${mailtoAddress}?subject=${mailtoSubject}&body=${mailtoBody}`;
+
+    link.setAttribute('href', href);
+    link.setAttribute('aria-label', useWhatsApp ? 'Vraag via WhatsApp' : 'Stuur een e-mail');
+  });
+}
 
 function initAcademyCarousel() {
   const carousel = document.querySelector('[data-academy-carousel]');
