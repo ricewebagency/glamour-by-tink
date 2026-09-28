@@ -4264,9 +4264,19 @@ video {
      object-fit: contain;
 }
 
+.\!object-contain {
+  -o-object-fit: contain !important;
+     object-fit: contain !important;
+}
+
 .object-cover {
   -o-object-fit: cover;
      object-fit: cover;
+}
+
+.\!object-cover {
+  -o-object-fit: cover !important;
+     object-fit: cover !important;
 }
 
 .object-center {
