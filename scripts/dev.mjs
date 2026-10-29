@@ -1,5 +1,5 @@
 import chokidar from "chokidar";
-import { mkdirSync, cpSync, copyFileSync, existsSync, rmSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, copyFileSync, existsSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { readdirSync } from "node:fs";
@@ -60,29 +60,47 @@ function copyFile(from, to) {
   copyFileSync(from, to);
 }
 
-function copyDir(from, to) {
-  ensureDirs();
-  mkdirSync(path.dirname(to), { recursive: true });
-  cpSync(from, to, { recursive: true, force: true });
-}
-
 function removePath(p) {
   if (existsSync(p)) rmSync(p, { recursive: true, force: true });
 }
 
-function renderRootHtmlFile(fileName) {
-  const source = path.join(SRC, fileName);
-  const dest = path.join(DOCS, fileName);
+function renderHtmlFile(source) {
+  const dest = toDocsPath(source);
   const html = renderHtmlWithPartials(source);
 
   ensureDirs();
+  mkdirSync(path.dirname(dest), { recursive: true });
   writeFileWithRetry(dest, html, "utf8");
 }
 
-function renderAllRootHtmlFiles() {
-  for (const file of readdirSync(SRC)) {
-    if (file.endsWith(".html")) {
-      renderRootHtmlFile(file);
+// css wordt door Tailwind gebouwd, partials worden in de html opgenomen
+function isExcludedPath(p) {
+  return [path.join(SRC, "css"), path.join(SRC, "partials")].some(
+    (dir) => p === dir || p.startsWith(dir + path.sep)
+  );
+}
+
+function listSrcFiles(dir = SRC) {
+  const files = [];
+
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, entry.name);
+    if (isExcludedPath(p)) continue;
+
+    if (entry.isDirectory()) {
+      files.push(...listSrcFiles(p));
+    } else {
+      files.push(p);
+    }
+  }
+
+  return files;
+}
+
+function renderAllHtmlFiles() {
+  for (const file of listSrcFiles()) {
+    if (path.extname(file) === ".html") {
+      renderHtmlFile(file);
     }
   }
 }
@@ -91,19 +109,27 @@ function isPartialsHtmlFile(p) {
   return p.startsWith(path.join(SRC, "partials") + path.sep) && path.extname(p) === ".html";
 }
 
-function initialSync() {
-  ensureDirs();
-  renderAllRootHtmlFiles();
-
-  for (const file of ["robots.txt", "sitemap.xml", "site.webmanifest"]) {
-    const from = path.join(SRC, file);
-    if (existsSync(from)) {
-      copyFile(from, path.join(DOCS, file));
-    }
+function syncFile(p) {
+  if (isPartialsHtmlFile(p)) {
+    renderAllHtmlFiles();
+    return;
   }
 
-  copyDir(path.join(SRC, "js"), path.join(DOCS, "js"));
-  copyDir(path.join(SRC, "assets"), path.join(DOCS, "assets"));
+  if (isExcludedPath(p)) return;
+
+  if (path.extname(p) === ".html") {
+    renderHtmlFile(p);
+  } else {
+    copyFile(p, toDocsPath(p));
+  }
+}
+
+function initialSync() {
+  ensureDirs();
+
+  for (const file of listSrcFiles()) {
+    syncFile(file);
+  }
 }
 
 function toDocsPath(srcPath) {
@@ -138,65 +164,30 @@ const tw = spawn(
   }
 );
 
-const watcher = chokidar.watch(
-  [
-    SRC,
-    `${SRC}/js/**`,
-    `${SRC}/assets/**`,
-  ],
-  { ignoreInitial: true }
-);
-
-function isRootHtml(p) {
-  // alleen src/*.html (geen subfolders)
-  return p.startsWith(`${SRC}${path.sep}`) &&
-    path.extname(p) === ".html" &&
-    path.dirname(p) === SRC;
-}
+const watcher = chokidar.watch(SRC, { ignoreInitial: true });
 
 watcher
-  .on("add", (p) => {
-    if (isPartialsHtmlFile(p)) {
-      renderAllRootHtmlFiles();
-      return;
-    }
-
-    const dest = toDocsPath(p);
-    copyFile(p, dest);
-  })
-  .on("change", (p) => {
-    if (isPartialsHtmlFile(p)) {
-      renderAllRootHtmlFiles();
-      return;
-    }
-
-    if (isRootHtml(p) ||
-      p.includes(`${path.sep}js${path.sep}`) ||
-      p.includes(`${path.sep}assets${path.sep}`)) {
-      if (isRootHtml(p)) {
-        renderRootHtmlFile(path.basename(p));
-      } else {
-        const dest = toDocsPath(p);
-        copyFile(p, dest);
-      }
-    }
-  })
+  .on("add", syncFile)
+  .on("change", syncFile)
   .on("unlink", (p) => {
     if (isPartialsHtmlFile(p)) {
-      renderAllRootHtmlFiles();
+      renderAllHtmlFiles();
       return;
     }
 
-    const dest = toDocsPath(p);
-    removePath(dest);
+    if (isExcludedPath(p)) return;
+
+    removePath(toDocsPath(p));
   })
   .on("addDir", (p) => {
-    const dest = toDocsPath(p);
-    mkdirSync(dest, { recursive: true });
+    if (isExcludedPath(p)) return;
+
+    mkdirSync(toDocsPath(p), { recursive: true });
   })
   .on("unlinkDir", (p) => {
-    const dest = toDocsPath(p);
-    removePath(dest);
+    if (isExcludedPath(p)) return;
+
+    removePath(toDocsPath(p));
   });
 
 // Netjes afsluiten
