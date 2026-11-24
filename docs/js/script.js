@@ -196,11 +196,15 @@ function initPageTransitions() {
 
 function initImmersiveLoader() {
   const body = document.body;
+  const releaseGuard = () => window.__gbtLoaderGuard?.release();
+
   if (!body || body.dataset.loaderDisabled === 'true') {
+    releaseGuard();
     return;
   }
 
   if (hasSeenLoaderInCurrentTab()) {
+    releaseGuard();
     return;
   }
 
@@ -275,7 +279,7 @@ function initImmersiveLoader() {
   const loader = document.createElement('div');
   loader.id = 'appLoader';
   loader.className = [
-    'fixed inset-0 z-[9999] flex items-center justify-center overflow-hidden',
+    'visible opacity-0 fixed inset-0 z-[9999] flex items-center justify-center overflow-hidden',
     'bg-[linear-gradient(135deg,#000000_0%,#080808_42%,#1b150d_100%)] text-white',
     'transition-opacity duration-500 ease-out motion-reduce:transition-none'
   ].join(' ');
@@ -308,8 +312,17 @@ function initImmersiveLoader() {
 
   if (!panel || !glyph || !progressNode || !percentNode) {
     loader.remove();
+    releaseGuard();
     return;
   }
+
+  // Fade the loader in over the dark guard background, then reveal the (covered) page.
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      loader.classList.remove('opacity-0');
+    });
+  });
+  window.setTimeout(releaseGuard, prefersReducedMotion ? 50 : 520);
 
   const previousHtmlOverflow = document.documentElement.style.overflow;
   const previousBodyOverflow = body.style.overflow;
@@ -336,23 +349,13 @@ function initImmersiveLoader() {
   let closeTimerId = 0;
   let hardCloseTimerId = 0;
 
-  const easeOutExpo = (value) => {
-    if (value >= 1) {
-      return 1;
-    }
-    return 1 - Math.pow(2, -10 * value);
-  };
+  const easeOutCubic = (value) => 1 - Math.pow(1 - Math.min(1, value), 3);
 
   const render = (value) => {
     const clamped = Math.max(0, Math.min(100, value));
     progressNode.setAttribute('aria-valuenow', String(Math.round(clamped)));
 
     const rounded = Math.round(clamped);
-
-    if (!prefersReducedMotion) {
-      const pulse = 1 + (Math.sin(clamped / 11) * 0.02);
-      glyph.style.transform = `scale(${pulse.toFixed(3)})`;
-    }
 
     if (rounded !== displayed) {
       displayed = rounded;
@@ -409,9 +412,9 @@ function initImmersiveLoader() {
   const tick = (now) => {
     const elapsed = now - startedAt;
     const t = Math.min(1, elapsed / simEstimateMs);
-    const simulatedTarget = Math.min(95, 95 * easeOutExpo(t));
+    const simulatedTarget = Math.min(95, 95 * easeOutCubic(t));
     const target = readyToFinish ? 100 : simulatedTarget;
-    const blend = readyToFinish ? 0.24 : 0.085;
+    const blend = readyToFinish ? 0.16 : 0.05;
 
     progress += (target - progress) * blend;
     if (readyToFinish && 100 - progress < 0.3) {
